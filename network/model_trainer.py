@@ -110,7 +110,8 @@ class DiffusionModel(LightningModule):
         _dataset = ImageDataset(resolution=self.image_size,
                                 data_folder=self.img_folder,)
         dataloader = DataLoader(_dataset,
-                                num_workers=self.num_workers,
+                                # num_workers=self.num_workers,
+                                num_workers=32,
                                 batch_size=self.batch_size, shuffle=True, pin_memory=True, drop_last=False)
         self.iterations = len(dataloader)
         return dataloader
