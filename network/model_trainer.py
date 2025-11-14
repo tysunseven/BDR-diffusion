@@ -128,7 +128,7 @@ class DiffusionModel(LightningModule):
         loss = self.model.training_loss(
             img, image_features, text_feature, projection_matrix, kernel_size=kernel_size, cond=cond,bdr=bdr).mean()
 
-        self.log("loss", loss.clone().detach().item(), prog_bar=True)
+        self.log("loss", loss.detach(), on_step=True, on_epoch=True, prog_bar=True, sync_dist=True)
 
         opt = self.optimizers()
         opt.zero_grad()
