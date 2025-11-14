@@ -25,7 +25,7 @@ class ImageDataset(torch.utils.data.Dataset):
         self.resolution = resolution
         self.data_folder=data_folder
         self.images = _list_image_files_recursively(os.path.join(data_folder,"img"))
-        with open(os.path.join(data_folder,"ncount.json"),"r") as f:
+        with open(os.path.join(data_folder,"count.json"),"r") as f:
             self.elatsic_tensor=js.load(f)
 
 
