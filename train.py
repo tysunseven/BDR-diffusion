@@ -31,7 +31,6 @@ def train_from_folder(
     verbose: bool = False,
     training_epoch: int = 200,
     in_azure: bool = False,
-    new: bool = True,
     continue_training: bool = False,
     debug: bool = False,
     seed: int = 777,
@@ -75,12 +74,6 @@ def train_from_folder(
     # 只有主进程 (rank 0) 才执行文件系统操作
     if rank == "0":
         ensure_directory(results_folder)
-
-    if continue_training:
-        new = False
-
-    # if new:
-    #     run(f"rm -rf {results_folder}/*")
 
     model_args = dict(
         results_folder=results_folder,
