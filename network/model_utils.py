@@ -397,3 +397,61 @@ def noise_sym(shape,device=None):
 
 def noise_sym_like(x):
     return noise_sym(x.shape,device=x.device)
+
+# --- 新增的类 ---
+
+class ResnetBlock2(nn.Module):
+    """
+    用于声学超材料 (Acoustic Metamaterial) 的 ResNet 块。
+    - 移除: 移除了 cond_mlp2，以匹配 2-DOF 的透射系数条件。
+    """
+    def __init__(self, world_dims: int, dim_in: int, dim_out: int, emb_dim: int, dropout: float = 0.1,):
+        super().__init__()
+        self.world_dims = world_dims
+        self.time_mlp = nn.Sequential(
+            activation_function(),
+            nn.Linear(emb_dim, 2*dim_out)
+        )
+        self.cond_mlp0 = nn.Sequential(
+                activation_function(),
+                nn.Linear(emb_dim, 2*dim_out),
+            )
+        self.cond_mlp1 = nn.Sequential(
+                activation_function(),
+                nn.Linear(emb_dim, 2*dim_out),
+            )
+        # 移除: self.cond_mlp2 (因为条件是 2-DOF)
+        # self.cond_mlp2 = nn.Sequential(
+        #         activation_function(),
+        #         nn.Linear(emb_dim, 2*dim_out),
+        #     )
+
+
+        self.block1 = nn.Sequential(
+            normalization(dim_in),
+            activation_function(),
+            conv_nd(world_dims, dim_in, dim_out, 3, padding=1),
+        )
+        self.block2 = nn.Sequential(
+            normalization1(dim_out),
+            activation_function(),
+            nn.Dropout(dropout),
+            zero_module(conv_nd(world_dims, dim_out, dim_out, 3, padding=1)),
+        )
+        self.res_conv = conv_nd(
+            world_dims, dim_in, dim_out, 1) if dim_in != dim_out else nn.Identity()
+
+    def forward(self, x, time_emb, text_condition=None, cond_emb=None):
+        h = self.block1(x)
+        
+        # 更改: 移除了 cond_emb[2] 和 cond_mlp2
+        emb_out = self.time_mlp(time_emb)[(...,) + (None, )*self.world_dims] + \
+                    self.cond_mlp0(cond_emb[0])[(...,) + (None, )*self.world_dims] + \
+                    self.cond_mlp1(cond_emb[1])[(...,) + (None, )*self.world_dims]
+                    # 移除: + self.cond_mlp2(cond_emb[2])[(...,) + (None, )*self.world_dims]
+        
+        out_norm, out_rest = self.block2[0], self.block2[1:]
+        scale, shift = torch.chunk(emb_out, 2, dim=1)
+        h=out_norm(h) * (1 + scale) + shift
+        h = out_rest(h)
+        return h + self.res_conv(x)
