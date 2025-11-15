@@ -111,7 +111,7 @@ class DiffusionModel(LightningModule):
                                 data_folder=self.img_folder,)
         dataloader = DataLoader(_dataset,
                                 # num_workers=self.num_workers,
-                                num_workers=32,
+                                num_workers=4,
                                 batch_size=self.batch_size, shuffle=True, pin_memory=True, drop_last=False)
         self.iterations = len(dataloader)
         return dataloader
@@ -141,5 +141,5 @@ class DiffusionModel(LightningModule):
         self.update_EMA()
 
     def on_train_epoch_end(self):
-        self.log("current_epoch", self.current_epoch)
+        self.log("current_epoch", self.current_epoch, logger=False)
         return super().on_train_epoch_end()
