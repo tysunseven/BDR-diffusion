@@ -45,6 +45,7 @@ def train_from_folder(
     split_dataset: bool = False,
     elevation_zero: bool = False,
     detail_view: bool = False,
+    run_timestamp: str = None  # <--- 在这里添加新参数
 ):
     if not in_azure:
         debug = True
@@ -55,13 +56,31 @@ def train_from_folder(
     data_classes.extend(["debug","microstructure", "all"])
     assert data_class in data_classes
 
-    results_folder = results_folder + "/" + name
-    ensure_directory(results_folder)
+    
+
+    # 在命名中增加时间戳
+    # 如果没有从 shell 传入时间戳，则自动生成一个
+    # (但这在 DDP 中仍会产生两个文件夹，所以强烈建议从 train.sh 传入)
+    if run_timestamp is None:
+        from datetime import datetime
+        run_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        print("Warning: run_timestamp not provided, generating one. This may cause issues in DDP.")
+
+    results_folder = results_folder + "/" + name + "_" + str(run_timestamp)
+
+    rank = os.environ.get("LOCAL_RANK", "0")
+    # 打印rank
+    # print(f"Local Rank: {rank}")
+
+    # 只有主进程 (rank 0) 才执行文件系统操作
+    if rank == "0":
+        ensure_directory(results_folder)
+
     if continue_training:
         new = False
 
-    if new:
-        run(f"rm -rf {results_folder}/*")
+    # if new:
+    #     run(f"rm -rf {results_folder}/*")
 
     model_args = dict(
         results_folder=results_folder,
