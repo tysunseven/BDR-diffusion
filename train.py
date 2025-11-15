@@ -55,15 +55,23 @@ def train_from_folder(
     data_classes.extend(["debug","microstructure", "all"])
     assert data_class in data_classes
 
+    # 显式地将 fire 传入的(字符串)"false"或(布尔)False 转换为真正的布尔值
+    # 我们只关心它是否是字面意义上的 True 或 "true"
+    continue_training = (str(continue_training).lower() == 'true')
     
 
-    # 在命名中增加时间戳
-    # 如果没有从 shell 传入时间戳，则自动生成一个
-    # (但这在 DDP 中仍会产生两个文件夹，所以强烈建议从 train.sh 传入)
+    # 验证 run_timestamp 是否被正确提供
     if run_timestamp is None:
-        from datetime import datetime
-        run_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        print("Warning: run_timestamp not provided, generating one. This may cause issues in DDP.")
+        if continue_training is True:
+            # 这是一个错误：继续训练时必须提供时间戳
+            raise ValueError("错误: --continue_training=True, 但没有提供 --run_timestamp。")
+        else:
+            # 这是一个新训练，但 train.sh 脚本没有生成时间戳 (兜底情况)
+            from datetime import datetime
+            run_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            print(f"警告: 正在开始新训练，但未从 train.sh 收到 --run_timestamp。")
+            print(f"警告: 自动生成了一个时间戳: {run_timestamp}。这在DDP中可能不安全。")
+
 
     results_folder = results_folder + "/" + name + "_" + str(run_timestamp)
 
@@ -134,15 +142,6 @@ def train_from_folder(
         mode="max",
     )
 
-    last_epoch = find_best_epoch(results_folder)
-    if os.path.exists(os.path.join(results_folder, "last.ckpt")):
-        last_ckpt = "last.ckpt"
-    else:
-        if exists(last_epoch):
-            last_ckpt = f"epoch={last_epoch:02d}.ckpt"
-        else:
-            last_ckpt = "last.ckpt"
-
     find_unused_parameters = False
     if in_azure:
         trainer = Trainer(devices=-1,
@@ -163,11 +162,62 @@ def train_from_folder(
                           log_every_n_steps=1,
                           callbacks=[checkpoint_callback])
 
-    if continue_training and os.path.exists(os.path.join(results_folder, last_ckpt)):
-        trainer.fit(model, ckpt_path=os.path.join(results_folder, last_ckpt))
-    else:
-        trainer.fit(model)
+    rank = os.environ.get('LOCAL_RANK', '0')
+    ckpt_to_load_path = None  # 最终决定要加载的检查点路径
 
+    if continue_training:
+        print(f"--- [Rank {rank} 检查点调试] (模式: 继续训练) ---")
+        
+        # --- 优先级 1: 检查 'last.ckpt' ---
+        potential_last_ckpt = os.path.join(results_folder, "last.ckpt")
+        print(f"[Rank {rank} 调试] 优先级 1: 正在检查 'last.ckpt' at: {potential_last_ckpt}")
+        
+        if os.path.exists(potential_last_ckpt):
+            ckpt_to_load_path = potential_last_ckpt
+            print(f"[Rank {rank} 调试] 找到了 'last.ckpt'。将从这里恢复。")
+        else:
+            # --- 优先级 2: 查找 'best' epoch ---
+            print(f"[Rank {rank} 调试] 'last.ckpt' 未找到。")
+            print(f"[Rank {rank} 调试] 优先级 2: 正在调用 find_best_epoch...")
+            
+            last_epoch_num = find_best_epoch(results_folder)
+            print(f"[Rank {rank} 调试] find_best_epoch 返回: {last_epoch_num}")
+
+            if exists(last_epoch_num): 
+                ckpt_filename = f"epoch={last_epoch_num:02d}.ckpt"
+                potential_best_ckpt = os.path.join(results_folder, ckpt_filename)
+                print(f"[Rank {rank} 调试] 正在检查 'best' epoch: {potential_best_ckpt}")
+
+                if os.path.exists(potential_best_ckpt):
+                    ckpt_to_load_path = potential_best_ckpt
+                    print(f"[Rank {rank} 调试] 找到了 'best' epoch ({ckpt_filename})。将从这里恢复。")
+                else:
+                    print(f"[Rank {rank} 调试] 警告: find_best_epoch 返回 {last_epoch_num}, 但文件 {ckpt_filename} 不存在!")
+                    print(f"[Rank {rank} 调试] (请确认 ModelCheckpoint 的 filename 已修正为 'epoch=...')")
+            else:
+                 print(f"[Rank {rank} 调试] find_best_epoch 未返回任何 epoch。")
+        
+        if ckpt_to_load_path is None:
+            print(f"[Rank {rank} 调试] 警告: 'continue_training' 为 True, 但在 {results_folder} 中未找到任何可加载的检查点!")
+        
+        print(f"--- [Rank {rank} 结束检查点调试] ---")
+    
+    else:
+        print(f"--- [Rank {rank} 检查点调试] (模式: 新训练, 将从头开始) ---")
+
+
+    # --- [新的] 启动 trainer.fit() 的逻辑 ---
+    # 只有当 'continue_training' 为 True 且我们成功找到了一个检查点时, 'ckpt_to_load_path' 才会有值
+    if ckpt_to_load_path:
+        print(f"[Rank {rank} 最终决定] 将调用 trainer.fit(ckpt_path='{ckpt_to_load_path}')")
+        trainer.fit(model, ckpt_path=ckpt_to_load_path)
+    else:
+        if continue_training:
+            # 如果用户想继续, 但我们没找到文件, 我们必须警告他们
+            print(f"[Rank {rank} 最终决定] 警告: 本应继续训练, 但未找到检查点。将从头开始训练。")
+        else:
+            print(f"[Rank {rank} 最终决定] 将调用 trainer.fit(model) (从头开始训练)")
+        trainer.fit(model)
 
 if __name__ == '__main__':
     fire.Fire(train_from_folder)
