@@ -30,9 +30,14 @@ class UNetModel(nn.Module):
         emb_dim = base_channels * 4
 
         self.time_pos_emb = LearnedSinusoidalPosEmb(base_channels)
+        # 上边输出一个形状为 (batch_size, base_channels + 1) 的张量
         self.time_emb = nn.Sequential(
+            # 所以这里输入维度是 base_channels + 1
+            # 第一层线性变换把维度从 base_channels + 1 映射到 emb_dim
             nn.Linear(base_channels + 1, emb_dim),
+            # 激活函数是 SiLU
             activation_function(),
+            # 第二层线性变换把维度从 emb_dim 映射到 emb_dim
             nn.Linear(emb_dim, emb_dim)
         )
         self.cond_pos_emb0 = LearnedSinusoidalPosEmb1(base_channels)
@@ -122,18 +127,23 @@ class UNetModel(nn.Module):
         self.out = conv_nd(world_dims, base_channels, 1, 3, padding=1)
 
     def forward(self, x, t, img_condition, text_condition, projection_matrix, x_self_cond=None, kernel_size=None, cond=None, bdr=None):
-
+        # img_condition, text_condition, projection_matrix, kernel_size 这些变量全都是None
         x_self_cond = default(x_self_cond, lambda: torch.zeros_like(x))
         x = torch.cat((x, x_self_cond, bdr), dim=1)
 
         if self.verbose:
             print("input size:")
             print(x.shape)
-
+        
         x = self.input_emb(x)
+
+        # 时间t的嵌入计算
+        # 时间 t 输入时是一个batch大小的一维张量
+        # self.time_pos_emb = LearnedSinusoidalPosEmb(base_channels)
         t = self.time_emb(self.time_pos_emb(t))
 
-        # 
+        # 条件 cond 的嵌入计算
+        # 无分类器引导
         null_index=torch.where(cond[:,0]==-1)
         cond_emb0=self.cond_emb0(self.cond_pos_emb0(cond[:,0]))
         cond_emb1=self.cond_emb1(self.cond_pos_emb1(cond[:,1]))
@@ -142,9 +152,14 @@ class UNetModel(nn.Module):
         cond_emb1[null_index]=self.null_emb1
         cond_emb2[null_index]=self.null_emb2
         cond_emb=[cond_emb0,cond_emb1,cond_emb2]
+        # resnet 和 mid_block1 中会使用 cond_emb
+        # 而 resnet 和 mid_block1 都是 ResnetBlock1 类的实例
+        # 所以我只需要修改 ResnetBlock1 类，使得它接受两个自由度的 cond_emb 就行了
+
 
         h = []
 
+        # Downstream
         for resnet, cross_attn, self_attn, downsample in self.downs:
             x = resnet(x, t, text_condition, cond_emb)
             if self.verbose:
@@ -161,6 +176,7 @@ class UNetModel(nn.Module):
             if self.verbose:
                 print(x.shape)
 
+        # Middle
         if self.verbose:
             print("enter bottle neck")
         x = self.mid_block1(x, t, text_condition, cond_emb)
@@ -179,6 +195,7 @@ class UNetModel(nn.Module):
             print(x.shape)
             print("finish bottle neck")
 
+        # Upstream
         for resnet, cross_attn, self_attn, upsample in self.ups:
             x = torch.cat((x, h.pop()), dim=1)
             if self.verbose:

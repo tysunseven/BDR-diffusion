@@ -90,22 +90,44 @@ class myDiffusion(nn.Module):
         return times
 
     def training_loss(self, img, img_features, text_feature, projection_matrix, kernel_size=None, cond=None,bdr=None, *args, **kwargs):
+        # img_features, text_feature, projection_matrix, kernel_size 这些参数虽然被定义，但传进来的值都是 None
+        # 所以有用的也就只有 img, cond, bdr 这三个参数了，也就是来自于 data_loader.py 中 ImageDataset 的 __getitem__ 方法的返回值
+        # 从输入的图像张量 img 中获取批次大小（batch size），即这个批次里有多少张图片
         batch = img.shape[0]
 
-        # classifier-free guidance
+        # 随机将当前批次中 1/8 样本的条件 cond 强制设置为 -1。-1 在这里充当一个“空”或“无条件”的标记
+        # 让同一个模型既学习“有条件”的去噪，也学习“无条件”的去噪
+        # 在生成时，通过放大这两者之间的差异来强化“有条件”的特征
         cond[-int(batch/8):,:]=-1
 
+        # torch.zeros((batch,), device=self.device) 创建了一个一维张量，长度为 batch，所有元素初始化为 0，并且这个张量被分配到与模型相同的设备上（CPU 或 GPU）
+        # .float().uniform_(0, 1) 将这个张量的数据类型转换为浮点数，并用均匀分布在 [0, 1) 范围内的随机数填充它
         times = torch.zeros(
             (batch,), device=self.device).float().uniform_(0, 1)
-        #noise = torch.randn_like(img)
+        
+        # noise = torch.randn_like(img)
+        # 这个函数的定义在 model_utils.py 中
+        # 生成一个形状与 img 相同、但具有特定对称性的噪声
+        # 在我的问题里使用普通的噪声就好
         noise = noise_sym_like(img)
 
+        # 根据随机生成的时间 t, 计算对应的 log SNR（信噪比的对数）
         noise_level = self.log_snr(times)
+
+        # 将 noise_level 的形状调整为与 img 兼容
         padded_noise_level = right_pad_dims_to(img, noise_level)
+
+        # 将“对数信噪比”转换为“信号缩放因子” $alpha$ 和“噪声缩放因子” $sigma$
         alpha, sigma = log_snr_to_alpha_sigma(padded_noise_level)
+
+        # 根据扩散模型的前向过程，向原始图像 img 添加噪声，生成 noised_img
         noised_img = alpha * img + sigma * noise
+
+        # 初始化“自条件” (self-conditioning) 变量为空
         self_cond = None
-        # self condition
+
+        # 以 50% 的概率启用自条件
+        # img_features, text_feature, projection_matrix, kernel_size 这些参数被传入，但依然是None
         if random() < 0.5:
             with torch.no_grad():
                 self_cond = self.denoise_fn(
@@ -116,6 +138,7 @@ class myDiffusion(nn.Module):
 
         return F.mse_loss(pred, img)
 
+    # 这是一个生成部分的采样函数
     @torch.no_grad()
     def sample_conditional_bdr_json(self, batch_size=16,
                              steps=50, truncated_index: float = 0.0, verbose: bool = True, C=None, mybdr=None):
@@ -185,10 +208,9 @@ class myDiffusion(nn.Module):
             img = mean + torch.sqrt(variance) * noise
 
         return img
-    
 
 
-    
+    # 用于调试和可视化的函数。它执行标准的去噪生成过程，但额外承担了“录像”的任务，将每一步的变化都保存到了硬盘上的 .npz 文件中
     @torch.no_grad()
     def sample_process(self, batch_size=16,
                              steps=50, truncated_index: float = 0.0, verbose: bool = True, C=None, mybdr=None):
@@ -341,6 +363,7 @@ class AcousticDiffusion(nn.Module):
 
         # classifier-free guidance
         # 假设 cond 是 [B, 2], 这一操作会设置 [B_cfg, 2] 为 -1
+        # 在我的代码里把值设为-1应该不太合适
         cond[-int(batch/8):,:]=-1
 
         times = torch.zeros(

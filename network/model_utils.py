@@ -6,21 +6,32 @@ import numpy as np
 from einops import rearrange
 from utils.utils import VIT_PATCH_NUMBER, VIEW_IMAGE_RES
 
-
+# EMA_{新权重} = beta * EMA_{旧权重} + (1 - beta) * Model_{新权重}
 class EMA():
     def __init__(self, beta):
+        # 下面这一行在当前隐式继承父类object的情况下是多余的
         super().__init__()
+        # beta 是一个浮点数，通常接近于 1（例如 0.999 或 0.9999）
         self.beta = beta
 
-    def update_model_average(self, ma_model, current_model):
-        for current_params, ma_params in zip(current_model.parameters(), ma_model.parameters()):
-            old_weight, up_weight = ma_params.data, current_params.data
-            ma_params.data = self.update_average(old_weight, up_weight)
-
+    # 这个函数依赖于 self.beta 的值，beta 是一个配置参数，它必须在某个地方被存储
+    # EMA 类 的首要目的，就是通过 __init__ 方法存储这个 beta 状态，这是一种面向对象（OOP）的封装思想
+    # 它将状态（beta）和使用该状态的行为（update_average）打包在了一个 EMA 对象中
+    # 调用：在 model_trainer.py 中，代码创建了一个实例：self.ema_updater = EMA(ema_rate)
+    # 这个 self.ema_updater 对象现在是一个“有状态的”更新器
+    # 当它被传递给 update_moving_average 函数时，该函数不需要关心 beta 到底是多少
+    # 它只需要调用 ema_updater.update_average(...) 即可
     def update_average(self, old, new):
         if old is None:
             return new
         return old * self.beta + (1 - self.beta) * new
+
+    # 这个函数没有被实际调用过
+    # 而是在utils.py文件中实现了一个功能完全相同的函数update_moving_average
+    def update_model_average(self, ma_model, current_model):
+        for current_params, ma_params in zip(current_model.parameters(), ma_model.parameters()):
+            old_weight, up_weight = ma_params.data, current_params.data
+            ma_params.data = self.update_average(old_weight, up_weight)
 
 
 def activation_function():
@@ -327,22 +338,33 @@ class ResnetBlock1(nn.Module):
 
 
 class LearnedSinusoidalPosEmb(nn.Module):
-
+    # 与 Transformer 中经典的“固定”位置编码不同，这个模块的频率是可学习参数
+    # 这意味着神经网络可以通过反向传播自动调整它对不同时间尺度的敏感度
     def __init__(self, dim):
+        # 输入一个参数dim
         super().__init__()
+        # 代码强制要求dim必须是偶数
         assert (dim % 2) == 0
         half_dim = dim // 2
+        # self.variable_name = nn.Parameter(data, requires_grad=True)
+        # data 是必须提供的参数，它是一个你希望转换成可学习参数的 PyTorch 张量 (Tensor)
+        # requires_grad 默认值为 True，PyTorch 会在反向传播时计算这个参数的梯度
+        # torch.randn 用于生成服从标准正态分布（Standard Normal Distribution）的随机数
+        # self.weights 是模型的一部分，会随着训练进行更新，权重代表了频率因子
         self.weights = nn.Parameter(torch.randn(half_dim))
 
     def forward(self, x):
         x = rearrange(x, 'b -> b 1')
         freqs = x * rearrange(self.weights, 'd -> 1 d') * 2 * math.pi
+        # torch.cat 是 PyTorch 中用于拼接（Concatenate）多个张量的函数
+        # 参数 dim=-1 的含义是：沿着张量的最后一个维度进行拼接
         fouriered = torch.cat((freqs.sin(), freqs.cos()), dim=-1)
         fouriered = torch.cat((x, fouriered), dim=-1)
         return fouriered
+    # 最后返回一个张量，其形状为 (batch_size, dim + 1)
     
 class LearnedSinusoidalPosEmb1(nn.Module):
-
+    # 区别在于权重的初始化方式
     def __init__(self, dim):
         super().__init__()
         assert (dim % 2) == 0
