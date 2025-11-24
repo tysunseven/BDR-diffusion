@@ -110,19 +110,25 @@ class AcousticDataset(torch.utils.data.Dataset):
     def __init__(
         self,
         resolution,  # 此参数保留以匹配 Lightning 模块的签名，但不再需要
-        data_folder, # 此参数现在指向包含 .npy 文件的目录
+        data_folder=None, # 此参数现在指向包含 .npy 文件的目录
+        structures_path=None,  # 新增: 直接指定结构文件路径
+        properties_path=None   # 新增: 直接指定属性文件路径
     ):
         super().__init__()
         self.resolution = resolution
-        self.data_folder = data_folder
         
-        # 更改: 加载 .npy 文件，而不是遍历 img 文件夹
-        # 假设 .npy 文件位于 data_folder 中
-        structures_path = os.path.join(self.data_folder, "surrogate_structures.npy")
-        properties_path = os.path.join(self.data_folder, "surrogate_properties.npy")
-
-        self.structures = np.load(structures_path)
-        self.properties = np.load(properties_path)
+        # 优先使用指定的文件路径，如果没有指定，则回退到原来的 data_folder 拼接方式
+        if structures_path is not None and properties_path is not None:
+            struct_p = structures_path
+            prop_p = properties_path
+        elif data_folder is not None:
+            struct_p = os.path.join(data_folder, "surrogate_structures.npy")
+            prop_p = os.path.join(data_folder, "surrogate_properties.npy")
+        else:
+            raise ValueError("Must provide either (structures_path and properties_path) or data_folder")
+        
+        self.structures = np.load(struct_p)
+        self.properties = np.load(prop_p)
 
         # 检查: 确保属性是 2-DOF (或至少 2-DOF)
         assert self.properties.shape[1] >= 2, "Properties .npy file must have at least 2 columns."

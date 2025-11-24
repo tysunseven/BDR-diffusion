@@ -13,6 +13,12 @@ from utils.utils import ensure_directory, run, get_tensorboard_dir, find_best_ep
 
 def train_from_folder(
     img_folder: str = "/home/D/dataset/",
+    # --- 新增参数 ---
+    train_structures_path: str = None,
+    train_properties_path: str = None,
+    val_structures_path: str = None,
+    val_properties_path: str = None,
+    # ----------------
     data_class: str = "chair",
     results_folder: str = './results',
     name: str = "model",
@@ -87,6 +93,12 @@ def train_from_folder(
     model_args = dict(
         results_folder=results_folder,
         img_folder=img_folder,
+        # --- 传入新参数 ---
+        train_structures_path=train_structures_path,
+        train_properties_path=train_properties_path,
+        val_structures_path=val_structures_path,
+        val_properties_path=val_properties_path,
+        # ------------------
         data_class=data_class,
         batch_size=batch_size,
         lr=lr,

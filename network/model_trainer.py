@@ -231,6 +231,12 @@ class AcousticDiffusionModel(LightningModule):
     def __init__(
         self,
         img_folder: str = "",
+        # --- 新增参数 ---
+        train_structures_path: str = None,
+        train_properties_path: str = None,
+        val_structures_path: str = None,
+        val_properties_path: str = None,
+        # ----------------
         data_class: str = "chair",
         results_folder: str = './results',
         image_size: int = 32,
@@ -263,6 +269,13 @@ class AcousticDiffusionModel(LightningModule):
         super().__init__()
         self.save_hyperparameters()
 
+        # 保存路径参数
+        self.train_structures_path = train_structures_path
+        self.train_properties_path = train_properties_path
+        self.val_structures_path = val_structures_path
+        self.val_properties_path = val_properties_path
+        self.img_folder = img_folder
+
         self.automatic_optimization = False
         self.results_folder = Path(results_folder)
         
@@ -283,7 +296,6 @@ class AcousticDiffusionModel(LightningModule):
         self.batch_size = batch_size
         self.lr = lr
         self.image_size = image_size
-        self.img_folder = img_folder
         self.data_class = data_class
         self.data_augmentation = data_augmentation
         self.with_attention = with_attention
@@ -331,13 +343,13 @@ class AcousticDiffusionModel(LightningModule):
 
     def train_dataloader(self):
         # 更改: 使用 AcousticDataset
-        _dataset = AcousticDataset(resolution=self.image_size,
-                                data_folder=self.img_folder,)
-        # --- 新增代码: 打印训练集总大小 ---
-        print(f"\n[Dataset Info] Total Training Samples: {len(_dataset)}")
-        print(f"[Dataset Info] Batch Size: {self.batch_size}")
-        print(f"[Dataset Info] Total Batches per Epoch: {len(_dataset) // self.batch_size}\n")
-        # -------------------------------
+        _dataset = AcousticDataset(
+            resolution=self.image_size,
+            data_folder=self.img_folder if self.train_structures_path is None else None,
+            structures_path=self.train_structures_path,
+            properties_path=self.train_properties_path
+        )
+        print(f"\n[Train Dataset] Size: {len(_dataset)}")
         dataloader = DataLoader(_dataset,
                                 # num_workers=self.num_workers,
                                 num_workers=4,
@@ -373,3 +385,43 @@ class AcousticDiffusionModel(LightningModule):
     def on_train_epoch_end(self):
         self.log("current_epoch", self.current_epoch, logger=False)
         return super().on_train_epoch_end()
+    
+    # --- 新增: 验证集 DataLoader ---
+    def val_dataloader(self):
+        # 如果没有提供验证集路径，返回 None
+        if self.val_structures_path is None or self.val_properties_path is None:
+            return None
+
+        _val_dataset = AcousticDataset(
+            resolution=self.image_size,
+            structures_path=self.val_structures_path,
+            properties_path=self.val_properties_path
+        )
+        print(f"[Val Dataset] Size: {len(_val_dataset)}")
+
+        return DataLoader(_val_dataset,
+                          num_workers=4,
+                          batch_size=self.batch_size,
+                          shuffle=False, # 验证集不需要 shuffle
+                          pin_memory=True,
+                          drop_last=False)
+
+    # --- 新增: 验证步 ---
+    def validation_step(self, batch, batch_idx):
+        image_features = None
+        projection_matrix = None
+        kernel_size = None
+        text_feature = None
+        
+        img = batch["img"]
+        cond = batch["cond"]
+
+        # 计算 loss (与 training_step 逻辑相同，但通常不进行反向传播)
+        # 注意: 这里的 self.model.training_loss 内部可能有随机 dropout，
+        # 在验证时是否需要随机性取决于你的需求。通常保持一致以监控训练进度是可以的。
+        loss = self.model.training_loss(
+            img, image_features, text_feature, projection_matrix, kernel_size=kernel_size, cond=cond).mean()
+
+        # 记录验证 loss，名称设为 'val_loss'
+        self.log("val_loss", loss, on_step=False, on_epoch=True, prog_bar=True, sync_dist=True)
+        return loss

@@ -10,6 +10,17 @@ CONTINUE_TRAINING=true
 # 例如: 20251115142819
 LOAD_TIMESTAMP_ID="20251120082359" 
 # LOAD_TIMESTAMP_ID="20251120082359" 这个是目前训练了8000epoch的模型 
+
+# --- 数据集路径配置 (新增) ---
+# 训练集文件
+TRAIN_STRUCT="/root/autodl-fs/acoustic_dataset1/surrogate_structures.npy"
+TRAIN_PROP="/root/autodl-fs/acoustic_dataset1/surrogate_properties.npy"
+
+# 验证集文件 (请修改为你实际的路径)
+VAL_STRUCT="/root/autodl-fs/acoustic_dataset1_val/surrogate_structures.npy"
+VAL_PROP="/root/autodl-fs/acoustic_dataset1_val/surrogate_properties.npy"
+# ---------------------------
+
 # --- 结束配置 ---
 
 # --- DDP 安全逻辑 (自动) ---
@@ -42,4 +53,8 @@ python3 acoustic_train.py --run_timestamp $RUN_TIMESTAMP \
                         --split_dataset False  \
                         --lr 1e-4 \
                         --optimizier adamw \
-                        --img_folder /root/autodl-fs/acoustic_dataset1
+                        # --img_folder /root/autodl-fs/acoustic_dataset1
+                        --train_structures_path "$TRAIN_STRUCT" \
+                        --train_properties_path "$TRAIN_PROP" \
+                        --val_structures_path "$VAL_STRUCT" \
+                        --val_properties_path "$VAL_PROP"
