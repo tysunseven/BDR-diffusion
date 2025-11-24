@@ -145,7 +145,7 @@ class myDiffusion(nn.Module):
         image_size = self.image_size
         shape = (batch_size, 1, image_size, image_size)
         
-        from utils.condition_data import white_image_feature, an_object_feature
+        # from utils.condition_data import white_image_feature, an_object_feature
         batch, device = shape[0], self.device
 
         time_pairs = self.get_sampling_timesteps(
@@ -217,7 +217,7 @@ class myDiffusion(nn.Module):
         image_size = self.image_size
         shape = (batch_size, 1, image_size, image_size)
         
-        from utils.condition_data import white_image_feature, an_object_feature
+        # from utils.condition_data import white_image_feature, an_object_feature
         batch, device = shape[0], self.device
 
         time_pairs = self.get_sampling_timesteps(
