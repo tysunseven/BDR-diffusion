@@ -3,7 +3,7 @@ export RESULT_FOLDER="/root/autodl-tmp/acoustic_results"
 
 # --- 配置区 ---
 # 设置为 'true' 来继续训练, 'false' 来开始新训练
-CONTINUE_TRAINING=true
+CONTINUE_TRAINING=false
 
 # 仅在 CONTINUE_TRAINING=true 时使用:
 # 在这里填入您想要继续训练的那个文件夹的时间戳
@@ -13,12 +13,12 @@ LOAD_TIMESTAMP_ID="20251120082359"
 
 # --- 数据集路径配置 (新增) ---
 # 训练集文件
-TRAIN_STRUCT="/root/autodl-fs/acoustic_dataset1/surrogate_structures.npy"
-TRAIN_PROP="/root/autodl-fs/acoustic_dataset1/surrogate_properties.npy"
+TRAIN_STRUCT="/root/autodl-fs/acoustic_dataset2/trainset2_structures.npy"
+TRAIN_PROP="/root/autodl-fs/acoustic_dataset2/trainset2_properties.npy"
 
 # 验证集文件 (请修改为你实际的路径)
-VAL_STRUCT="/root/autodl-fs/acoustic_dataset1_val/surrogate_structures.npy"
-VAL_PROP="/root/autodl-fs/acoustic_dataset1_val/surrogate_properties.npy"
+VAL_STRUCT="/root/autodl-fs/acoustic_dataset2/valiset2_structures.npy"
+VAL_PROP="/root/autodl-fs/acoustic_dataset2/valiset2_properties.npy"
 # ---------------------------
 
 # --- 结束配置 ---
