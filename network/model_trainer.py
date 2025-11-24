@@ -95,6 +95,13 @@ class DiffusionModel(LightningModule):
             self.num_workers = 1
         else:
             self.num_workers = os.cpu_count()
+        
+        # --- 新增代码: 打印网络总参数量 ---
+        total_params = sum(p.numel() for p in self.model.parameters())
+        trainable_params = sum(p.numel() for p in self.model.parameters() if p.requires_grad)
+        print(f"\n[Model Info] Total Parameters: {total_params:,}")
+        print(f"[Model Info] Trainable Parameters: {trainable_params:,}\n")
+        # -------------------------------
     
     # 将主模型（self.model）的权重（参数）复制到 EMA “影子”模型（self.ema_model）中
     def reset_parameters(self):
@@ -129,6 +136,13 @@ class DiffusionModel(LightningModule):
         # 钩子方法，当 trainer.fit(model) 开始时，框架会自动调用这个方法，以获取用于训练的数据加载器（DataLoader）
         _dataset = ImageDataset(resolution=self.image_size,
                                 data_folder=self.img_folder,)
+
+        # --- 新增代码: 打印训练集总大小 ---
+        print(f"\n[Dataset Info] Total Training Samples: {len(_dataset)}")
+        print(f"[Dataset Info] Batch Size: {self.batch_size}")
+        print(f"[Dataset Info] Total Batches per Epoch: {len(_dataset) // self.batch_size}\n")
+        # -------------------------------
+
         dataloader = DataLoader(_dataset,
                                 # num_workers=self.num_workers,
                                 num_workers=4,
@@ -293,6 +307,13 @@ class AcousticDiffusionModel(LightningModule):
         else:
             self.num_workers = os.cpu_count()
 
+        # --- 新增代码: 打印网络总参数量 ---
+        total_params = sum(p.numel() for p in self.model.parameters())
+        trainable_params = sum(p.numel() for p in self.model.parameters() if p.requires_grad)
+        print(f"\n[Model Info] Total Parameters: {total_params:,}")
+        print(f"[Model Info] Trainable Parameters: {trainable_params:,}\n")
+        # -------------------------------
+
     def reset_parameters(self):
         self.ema_model.load_state_dict(self.model.state_dict())
 
@@ -312,6 +333,11 @@ class AcousticDiffusionModel(LightningModule):
         # 更改: 使用 AcousticDataset
         _dataset = AcousticDataset(resolution=self.image_size,
                                 data_folder=self.img_folder,)
+        # --- 新增代码: 打印训练集总大小 ---
+        print(f"\n[Dataset Info] Total Training Samples: {len(_dataset)}")
+        print(f"[Dataset Info] Batch Size: {self.batch_size}")
+        print(f"[Dataset Info] Total Batches per Epoch: {len(_dataset) // self.batch_size}\n")
+        # -------------------------------
         dataloader = DataLoader(_dataset,
                                 # num_workers=self.num_workers,
                                 num_workers=4,
