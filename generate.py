@@ -13,7 +13,7 @@ def generate_conditional_bdr_json(
     model_path: str,
     output_path: str = "./outputs",
     ema: bool = True,
-    num_generate: int = 36,
+    num_generate: int = 1,
     start_index: int = 0,
     steps: int = 50,
     truncated_time: float = 0.0,
@@ -65,7 +65,7 @@ def generate_conditional_bdr_json(
             batch_size=batch, steps=steps, truncated_index=truncated_time,C=ctensor[:,j:j+batch].T,mybdr=mybdr[:batch])
         gathered_samples.extend(post_process(res_tensor).cpu().numpy())
         j+=16
-    save_as_npz(gathered_samples,output_path)
+    save_as_pngs(gathered_samples,output_path)
 
 
 def post_process(res_tensor):
@@ -77,6 +77,33 @@ def post_process(res_tensor):
 def save_as_npz(gathered_samples,path):
     arr = np.array(gathered_samples)
     np.savez(path,arr)
+
+def save_as_pngs(gathered_samples, save_folder):
+    """
+    将收集到的样本保存为单独的 PNG 图片。
+    """
+    # 确保保存目录存在
+    if not os.path.exists(save_folder):
+        os.makedirs(save_folder)
+
+    for i, img_array in enumerate(gathered_samples):
+        # gathered_samples 中的 img_array 已经是 uint8 类型，形状为 (H, W, C)
+        
+        # 如果是单通道灰度图 (H, W, 1)，squeeze 掉最后一个维度变成 (H, W)
+        if img_array.shape[-1] == 1:
+            img_array = img_array.squeeze(-1)
+        
+        # 创建 PIL Image 对象
+        im = Image.fromarray(img_array)
+        
+        # 构造文件名，例如: sample_0.png, sample_1.png ...
+        file_name = f"sample_{i}.png"
+        file_path = os.path.join(save_folder, file_name)
+        
+        # 保存
+        im.save(file_path)
+    
+    print(f"Saved {len(gathered_samples)} images to {save_folder}")
 
 if __name__ == '__main__':
 
@@ -103,7 +130,7 @@ if __name__ == '__main__':
     # json file of elastic tensors
     parser.add_argument("--json_path", type=str, default="")
     parser.add_argument("--bdr_path", type=str, default="")
-    parser.add_argument("--bdr_type",type=int,default=2)
+    parser.add_argument("--bdr_type",type=int,default=0)
 
     args = parser.parse_args()
     method = (args.generate_method).lower()
