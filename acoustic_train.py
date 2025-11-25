@@ -146,14 +146,25 @@ def train_from_folder(
         default_hp_metric=False
     )
 
-    checkpoint_callback = ModelCheckpoint(
-        monitor="current_epoch",
+    # --- 回调 1: 专门负责保存“验证集 Loss 最低”的模型 (Best) ---
+    # 这个需要勤快一点，每个 epoch 都检查，以免漏掉好模型
+    checkpoint_callback_best = ModelCheckpoint(
+        monitor="val_loss",
+        mode="min",
+        save_top_k=2,             # 保留 loss 最低的 5 个
+        save_last=False,          # 这个回调不负责保存 last.ckpt
+        every_n_epochs=1,         # 每个 epoch 都检查性能
         dirpath=results_folder,
-        filename="{epoch:02d}",
-        save_top_k=10,
-        save_last=save_last,
-        every_n_epochs=save_every_epoch,
-        mode="max",
+        filename="{epoch:02d}-{val_loss:.4f}", # 文件名
+    )
+
+    # --- 回调 2: 专门负责保存“最新”的模型 (Last) ---
+    # 这个可以懒一点，每 50 个 epoch 存一次，专门用于断点续训
+    checkpoint_callback_last = ModelCheckpoint(
+        save_top_k=0,             # 不根据性能保存模型
+        save_last=True,           # 只保存 last.ckpt
+        every_n_epochs=save_every_epoch, # 使用您脚本里设置的 50
+        dirpath=results_folder,
     )
 
     find_unused_parameters = False
@@ -165,7 +176,7 @@ def train_from_folder(
                           logger=tb_logger,
                           max_epochs=training_epoch,
                           log_every_n_steps=10,
-                          callbacks=[checkpoint_callback])
+                          callbacks=[checkpoint_callback_best, checkpoint_callback_last])
     else:
         trainer = Trainer(devices=-1,
                           accelerator="gpu",
@@ -174,7 +185,7 @@ def train_from_folder(
                           logger=tb_logger,
                           max_epochs=training_epoch,
                           log_every_n_steps=1,
-                          callbacks=[checkpoint_callback])
+                          callbacks=[checkpoint_callback_best, checkpoint_callback_last])
 
     rank = os.environ.get('LOCAL_RANK', '0')
     ckpt_to_load_path = None  # 最终决定要加载的检查点路径

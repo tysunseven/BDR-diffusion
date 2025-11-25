@@ -1,6 +1,7 @@
 import copy
+import torch  # <--- 添加这一行
 from utils.utils import set_requires_grad
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, random_split
 from network.model_utils import EMA,make_sym,noise_sym,noise_sym_like
 from network.data_loader import ImageDataset, AcousticDataset
 from pathlib import Path
@@ -17,6 +18,9 @@ class DiffusionModel(LightningModule):
     def __init__(
         self,
         img_folder: str = "",
+        # --- 新增参数: 验证集比例 ---
+        val_ratio: float = 0.1, 
+        # ------------------------
         data_class: str = "chair",
         results_folder: str = './results',
         image_size: int = 32,
@@ -48,6 +52,13 @@ class DiffusionModel(LightningModule):
 
         super().__init__()
         self.save_hyperparameters()
+
+        # 保存验证集比例
+        self.val_ratio = val_ratio
+
+        # 初始化数据集占位符
+        self.train_dataset = None
+        self.val_dataset = None
 
         self.automatic_optimization = False
         self.results_folder = Path(results_folder)
@@ -132,23 +143,100 @@ class DiffusionModel(LightningModule):
             raise NotImplementedError
         return [optimizer]
 
+    # --- 新增: setup 方法 (Lightning 会在训练前自动调用) ---
+    def setup(self, stage=None):
+        # 如果已经划分过，就跳过
+        if self.train_dataset is not None:
+            return
+
+        # 1. 加载完整数据集
+        full_dataset = ImageDataset(
+            resolution=self.image_size,
+            data_folder=self.img_folder
+        )
+        
+        # 2. 计算划分的长度
+        total_len = len(full_dataset)
+        val_len = int(total_len * self.val_ratio)
+        train_len = total_len - val_len
+
+        # 3. 随机划分
+        # 使用固定的种子 (generator) 确保每次运行划分的结果是一样的，
+        # 这样验证集就是固定的，方便对比不同实验的结果。
+        self.train_dataset, self.val_dataset = random_split(
+            full_dataset, 
+            [train_len, val_len],
+            generator=torch.Generator().manual_seed(42) 
+        )
+        
+        print(f"\n[Dataset Split] Total: {total_len}")
+        print(f"[Dataset Split] Train size: {len(self.train_dataset)}")
+        print(f"[Dataset Split] Val size: {len(self.val_dataset)}\n")
+
+    # def train_dataloader(self):
+    #     # 钩子方法，当 trainer.fit(model) 开始时，框架会自动调用这个方法，以获取用于训练的数据加载器（DataLoader）
+    #     _dataset = ImageDataset(resolution=self.image_size,
+    #                             data_folder=self.img_folder,)
+
+    #     # --- 新增代码: 打印训练集总大小 ---
+    #     print(f"\n[Dataset Info] Total Training Samples: {len(_dataset)}")
+    #     print(f"[Dataset Info] Batch Size: {self.batch_size}")
+    #     print(f"[Dataset Info] Total Batches per Epoch: {len(_dataset) // self.batch_size}\n")
+    #     # -------------------------------
+
+    #     dataloader = DataLoader(_dataset,
+    #                             # num_workers=self.num_workers,
+    #                             num_workers=4,
+    #                             batch_size=self.batch_size, shuffle=True, pin_memory=True, drop_last=False)
+    #     self.iterations = len(dataloader)
+    #     return dataloader
+    
+    # --- 修改: train_dataloader 使用划分后的训练集 ---
     def train_dataloader(self):
-        # 钩子方法，当 trainer.fit(model) 开始时，框架会自动调用这个方法，以获取用于训练的数据加载器（DataLoader）
-        _dataset = ImageDataset(resolution=self.image_size,
-                                data_folder=self.img_folder,)
-
-        # --- 新增代码: 打印训练集总大小 ---
-        print(f"\n[Dataset Info] Total Training Samples: {len(_dataset)}")
-        print(f"[Dataset Info] Batch Size: {self.batch_size}")
-        print(f"[Dataset Info] Total Batches per Epoch: {len(_dataset) // self.batch_size}\n")
-        # -------------------------------
-
-        dataloader = DataLoader(_dataset,
-                                # num_workers=self.num_workers,
-                                num_workers=4,
-                                batch_size=self.batch_size, shuffle=True, pin_memory=True, drop_last=False)
+        # 注意: 这里不再重新实例化 ImageDataset，而是直接使用 self.train_dataset
+        dataloader = DataLoader(
+            self.train_dataset,
+            num_workers=4,
+            batch_size=self.batch_size, 
+            shuffle=True, 
+            pin_memory=True, 
+            drop_last=False
+        )
         self.iterations = len(dataloader)
         return dataloader
+
+    # --- 新增: val_dataloader ---
+    def val_dataloader(self):
+        return DataLoader(
+            self.val_dataset,
+            num_workers=4,
+            batch_size=self.batch_size,
+            shuffle=False, # 验证集不需要 shuffle
+            pin_memory=True,
+            drop_last=False
+        )
+
+    # --- 新增: validation_step ---
+    def validation_step(self, batch, batch_idx):
+        # BDR 任务包含 bdr 数据，所以这里要加上
+        img = batch["img"]
+        cond = batch["cond"]
+        bdr = batch["bdr"]
+
+        image_features = None
+        text_feature = None
+        projection_matrix = None
+        kernel_size = None
+
+        # 计算 Loss
+        loss = self.model.training_loss(
+            img, image_features, text_feature, projection_matrix, 
+            kernel_size=kernel_size, cond=cond, bdr=bdr
+        ).mean()
+
+        # 记录 val_loss
+        self.log("val_loss", loss, on_step=False, on_epoch=True, prog_bar=True, sync_dist=True)
+        return loss
 
     def training_step(self, batch, batch_idx):
         # 钩子方法，在训练过程中，框架会为 train_dataloader 中的每一个批次 (batch) 的数据都调用一次这个方法

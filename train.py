@@ -12,6 +12,9 @@ from utils.utils import ensure_directory, run, get_tensorboard_dir, find_best_ep
 
 def train_from_folder(
     img_folder: str = "/home/D/dataset/",
+    # --- 新增参数 ---
+    val_ratio: float = 0.1,
+    # ----------------
     data_class: str = "chair",
     results_folder: str = './results',
     name: str = "model",
@@ -86,6 +89,9 @@ def train_from_folder(
     model_args = dict(
         results_folder=results_folder,
         img_folder=img_folder,
+        # --- 传入参数 ---
+        val_ratio=val_ratio,
+        # ----------------
         data_class=data_class,
         batch_size=batch_size,
         lr=lr,
